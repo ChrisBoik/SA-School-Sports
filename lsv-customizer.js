@@ -1,6 +1,4 @@
-	console.log("CHRIS YO 1")
 jQuery(function($) {
-	console.log("CHRIS YO 2")
   const cont = $('.lsv-repeater-container');
   const tmpl = $('template.lsv-item-template').html();
   const hidden = $('#customize-control-lsv_data input[type=hidden]');
@@ -9,7 +7,6 @@ jQuery(function($) {
     cont.empty();
     let data = JSON.parse(hidden.val() || '[]');
     data.forEach(item => add(item));
-	  	console.log("CHRIS YO 2")
   }
 
   function save() {

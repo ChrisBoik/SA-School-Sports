@@ -111,23 +111,6 @@
 		});
 	}
 
-	// Debug function to help troubleshoot widget issues
-	function debugWidgetInfo() {
-		console.log('=== Widget Debug Info ===');
-		document.querySelectorAll('.custom-widget-container').forEach(function(container, index) {
-			const wrapper = getWrapperElement(container);
-			const sidebarId = container.dataset.sidebarId;
-			console.log('Widget ' + index + ':', {
-				container: container,
-				wrapper: wrapper,
-				sidebarId: sidebarId,
-				widgetId: container.dataset.widgetInstanceId,
-				hasPrevious: wrapper ? !!getAdjacentWidget(wrapper, 'previousElementSibling') : 'no wrapper',
-				hasNext: wrapper ? !!getAdjacentWidget(wrapper, 'nextElementSibling') : 'no wrapper'
-			});
-		});
-	}
-
 	function ensureSortable(sidebarId, wrapper) {
 		if (!sidebarId || !wrapper || !wrapper.parentElement || !$ || !$.fn || !$.fn.sortable) {
 			return;
@@ -147,20 +130,33 @@
 		}
 
 		const $parent = $(parent);
+
+		// Prevent native browser link-drag on <a> tags inside widgets so jQuery UI
+		// sortable can handle the drag without the browser starting a link-drag ghost.
+		parent.querySelectorAll('.sass-media-widget').forEach(function (link) {
+			link.addEventListener('dragstart', function (e) { e.preventDefault(); });
+		});
+
 		$parent.sortable({
 			items: '> .widget:visible',
 			handle: '.drag-widget-handle',
+			cancel: '',  // Override default which blocks <button> elements from triggering drag
 			axis: 'y',
+			helper: 'clone',
 			placeholder: 'sass-widget-placeholder',
 			forcePlaceholderSize: true,
 			tolerance: 'pointer',
 			start: function (event, ui) {
-				ui.item.addClass('sass-widget-dragging');
-				ui.item.find('.custom-widget-container').addClass('is-dragging');
+				// The clone follows the cursor (styled as "lifted").
+				// The original stays in place as a ghost.
+				ui.helper.addClass('sass-widget-dragging');
+				ui.item.addClass('sass-widget-ghost');
+				// Match placeholder to widget size (placeholder sits where item will drop)
+				ui.placeholder.height(ui.item.outerHeight());
+				ui.placeholder.width(ui.item.outerWidth());
 			},
 			stop: function (event, ui) {
-				ui.item.removeClass('sass-widget-dragging');
-				ui.item.find('.custom-widget-container').removeClass('is-dragging');
+				ui.item.removeClass('sass-widget-ghost');
 				refreshSidebarMoveButtons(sidebarId);
 			},
 			update: function () {
@@ -221,45 +217,82 @@
 		}
 
 		if (controlId && sidebarId && widgetId) {
-			const moveUp = container.querySelector('.move-widget-up-button');
+			// Shared handler for Up/Down — computes visible order and sends
+			// sass-reorder-sidebar (same path as drag-n-drop) so hidden widgets
+			// are skipped and the merge logic in customizer.js handles the rest.
+			function handleMove(direction) {
+				var wrapper = getWrapperElement(container);
+				if (!wrapper || !wrapper.parentElement) {
+					return;
+				}
+
+				// Build visible order from DOM
+				var parent = wrapper.parentElement;
+				var visibleIds = [];
+				var children = parent.children;
+				for (var i = 0; i < children.length; i++) {
+					var child = children[i];
+					if (child.nodeType === 1 && child.classList.contains('widget')) {
+						var cs = window.getComputedStyle(child);
+						if (cs.display !== 'none' && cs.visibility !== 'hidden' && child.id) {
+							visibleIds.push(child.id);
+						}
+					}
+				}
+
+				var currentIndex = visibleIds.indexOf(wrapper.id);
+				if (currentIndex === -1) {
+					return;
+				}
+
+				var targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+				if (targetIndex < 0 || targetIndex >= visibleIds.length) {
+					return;
+				}
+
+				// Swap in visible order
+				var temp = visibleIds[currentIndex];
+				visibleIds[currentIndex] = visibleIds[targetIndex];
+				visibleIds[targetIndex] = temp;
+
+				// Also swap in DOM so the preview updates immediately
+				var targetEl = document.getElementById(visibleIds[currentIndex]);
+				if (targetEl) {
+					if (direction === 'up') {
+						parent.insertBefore(wrapper, targetEl);
+					} else {
+						parent.insertBefore(targetEl, wrapper);
+					}
+				}
+
+				var channel = getPreviewChannel();
+				if (channel && visibleIds.length) {
+					channel.send('sass-reorder-sidebar', {
+						sidebarId: sidebarId,
+						order: visibleIds
+					});
+				}
+
+				setTimeout(function () {
+					refreshSidebarMoveButtons(sidebarId);
+				}, 150);
+			}
+
+			var moveUp = container.querySelector('.move-widget-up-button');
 			if (moveUp) {
 				moveUp.addEventListener('click', function (e) {
 					e.preventDefault();
 					e.stopPropagation();
-					const channel = getPreviewChannel();
-					if (!channel) {
-						return;
-					}
-					channel.send('sass-move-widget', {
-						controlId: controlId,
-						sidebarId: sidebarId,
-						widgetId: widgetId,
-						direction: 'up'
-					});
-					setTimeout(function () {
-						refreshSidebarMoveButtons(sidebarId);
-					}, 150);
+					handleMove('up');
 				});
 			}
 
-			const moveDown = container.querySelector('.move-widget-down-button');
+			var moveDown = container.querySelector('.move-widget-down-button');
 			if (moveDown) {
 				moveDown.addEventListener('click', function (e) {
 					e.preventDefault();
 					e.stopPropagation();
-					const channel = getPreviewChannel();
-					if (!channel) {
-						return;
-					}
-					channel.send('sass-move-widget', {
-						controlId: controlId,
-						sidebarId: sidebarId,
-						widgetId: widgetId,
-						direction: 'down'
-					});
-					setTimeout(function () {
-						refreshSidebarMoveButtons(sidebarId);
-					}, 150);
+					handleMove('down');
 				});
 			}
 

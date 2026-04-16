@@ -14,14 +14,9 @@
  * the customizer simply resizes the preview iframe, so we override inline.
  */
 (function () {
-	console.log('[SASS Device Preview] Script loaded in preview iframe');
-
 	if (typeof wp === 'undefined' || !wp.customize) {
-		console.warn('[SASS Device Preview] wp.customize not available — aborting');
 		return;
 	}
-
-	console.log('[SASS Device Preview] wp.customize is available');
 
 	var DEVICES = ['mobile', 'tablet', 'desktop'];
 
@@ -61,17 +56,25 @@
 	 * Apply visibility overrides for the given device.
 	 */
 	function applyDeviceVisibility(device) {
-		var widgets = document.querySelectorAll(
-			'.extendedwopts-hide, .extendedwopts-show'
-		);
-
-		console.log('[SASS Device Preview] Applying device: "' + device + '" — found ' + widgets.length + ' widget(s) with device classes');
-
-		widgets.forEach(function (el) {
+		// Widget Options widgets (extendedwopts classes)
+		document.querySelectorAll('.extendedwopts-hide, .extendedwopts-show').forEach(function (el) {
 			var display = resolveDisplay(el, device);
 			if (display !== null) {
-				console.log('[SASS Device Preview]   Widget:', el.id || el.className, '→ display:', display || '(visible)');
 				el.style.setProperty('display', display, 'important');
+			}
+		});
+
+		// Our own SASS widgets (data-sass-device-* attributes)
+		// Skip widgets also controlled by Widget Options to avoid conflict
+		document.querySelectorAll('.custom-widget-container[data-sass-device-desktop]').forEach(function (el) {
+			var wrapper = el.closest('.extendedwopts-hide, .extendedwopts-show');
+			if (wrapper) return;
+
+			var showOnDevice = el.getAttribute('data-sass-device-' + device);
+			if (showOnDevice === '0') {
+				el.style.setProperty('display', 'none', 'important');
+			} else {
+				el.style.removeProperty('display');
 			}
 		});
 	}
@@ -83,11 +86,8 @@
 	};
 
 	wp.customize.bind('preview-ready', function () {
-		console.log('[SASS Device Preview] preview-ready fired');
-
 		// Listen for device changes sent from the controls pane
 		wp.customize.preview.bind('previewedDevice', function (newDevice) {
-			console.log('[SASS Device Preview] Received previewedDevice message: "' + newDevice + '"');
 			var mapped = deviceMap[newDevice] || 'desktop';
 			applyDeviceVisibility(mapped);
 		});
@@ -96,33 +96,21 @@
 		try {
 			var parent = window.parent;
 			if (parent && parent.wp && parent.wp.customize) {
-				console.log('[SASS Device Preview] Parent wp.customize accessible');
 				var previewedDevice = parent.wp.customize.previewedDevice;
 				if (previewedDevice && typeof previewedDevice.get === 'function') {
 					var initial = previewedDevice.get();
-					console.log('[SASS Device Preview] Initial device from parent: "' + initial + '"');
 					if (initial && deviceMap[initial]) {
 						applyDeviceVisibility(deviceMap[initial]);
 					}
 
 					previewedDevice.bind(function (newDevice) {
-						console.log('[SASS Device Preview] Parent previewedDevice changed: "' + newDevice + '"');
 						var mapped = deviceMap[newDevice] || 'desktop';
 						applyDeviceVisibility(mapped);
 					});
-				} else {
-					console.warn('[SASS Device Preview] parent.wp.customize.previewedDevice not found or not a Value');
 				}
-			} else {
-				console.warn('[SASS Device Preview] Cannot access parent wp.customize');
 			}
 		} catch (e) {
-			console.warn('[SASS Device Preview] Cross-origin error accessing parent:', e.message);
+			// Cross-origin — fall back to message-based channel only
 		}
-	});
-
-	// Fallback: also listen on the 'active' event in case preview-ready has already fired
-	wp.customize.bind('active', function () {
-		console.log('[SASS Device Preview] "active" event fired (fallback)');
 	});
 })();

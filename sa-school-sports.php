@@ -22,9 +22,8 @@ class Custom_Media_Widget extends WP_Widget {
 	}
 
 	function update_custom_widget_name($name, $instance, $id_base) {
-		if (isset($instance['title'])) {
-			$name = $instance['title'] . ': ' . $name;
-
+		if ( ! empty( $instance['title'] ) ) {
+			return $instance['title'] . ' — SASS Widget';
 		}
 		return $name;
 	}	
@@ -38,6 +37,60 @@ class Custom_Media_Widget extends WP_Widget {
      * @param array $instance Saved values from database.
      */
 	public function widget( $args, $instance ) {
+		// --- Device visibility check (skip in customizer — handled by JS) ---
+		if ( ! is_customize_preview() ) {
+			$device_desktop = isset( $instance['device_desktop'] ) ? $instance['device_desktop'] : '1';
+			$device_tablet  = isset( $instance['device_tablet'] )  ? $instance['device_tablet']  : '1';
+			$device_mobile  = isset( $instance['device_mobile'] )  ? $instance['device_mobile']  : '1';
+
+			$is_mobile = wp_is_mobile();
+			if ( $is_mobile && $device_mobile !== '1' && $device_tablet !== '1' ) {
+				return;
+			}
+			if ( ! $is_mobile && $device_desktop !== '1' ) {
+				return;
+			}
+		}
+
+		// --- Date scheduling check ---
+		if ( ! is_customize_preview() ) {
+			$show_from = ! empty( $instance['show_from'] ) ? $instance['show_from'] : '';
+			$show_to   = ! empty( $instance['show_to'] )   ? $instance['show_to']   : '';
+			$now = current_time( 'Y-m-d\TH:i' );
+			if ( $show_from && $now < $show_from ) {
+				return;
+			}
+			if ( $show_to && $now > $show_to ) {
+				return;
+			}
+		}
+
+		// --- Taxonomy visibility check ---
+		$tax_categories = ! empty( $instance['tax_categories'] ) ? (array) $instance['tax_categories'] : array();
+		if ( ! empty( $tax_categories ) && ! is_customize_preview() ) {
+			$tax_mode  = ! empty( $instance['tax_mode'] )  ? $instance['tax_mode']  : 'hide';
+			$tax_scope = ! empty( $instance['tax_scope'] ) ? $instance['tax_scope'] : '1';
+
+			$matches = false;
+			$is_archive = is_category( $tax_categories ) || is_tag( $tax_categories );
+			$is_single  = is_single() && has_category( $tax_categories );
+
+			if ( $tax_scope === '1' ) {
+				$matches = $is_archive || $is_single;
+			} elseif ( $tax_scope === '2' ) {
+				$matches = $is_archive;
+			} elseif ( $tax_scope === '3' ) {
+				$matches = $is_single;
+			}
+
+			if ( $tax_mode === 'hide' && $matches ) {
+				return;
+			}
+			if ( $tax_mode === 'show' && ! $matches ) {
+				return;
+			}
+		}
+
 		$title = apply_filters( 'widget_title', $instance['title'] );
 
 		$widget_identifier = $this->get_field_name('');
@@ -106,7 +159,7 @@ class Custom_Media_Widget extends WP_Widget {
 	}
 	.sass-media-widget:not(.image-selected) .widget-button{
 		opacity: 1;
-	}	
+	}
 	.sass-media-widget:hover .widget-button {
 		opacity: 1;
 	}
@@ -118,17 +171,63 @@ class Custom_Media_Widget extends WP_Widget {
 		flex-wrap: wrap;
 		grid-area: 1 / 1;
 	}
+	.widget-button{
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
 	.widget-button>span{
 		display: inline-block;width: 20px;height: 20px;line-height: 1;vertical-align: middle;margin: 0 2px;
 	}
 	.widget-button.drag-widget-button .dashicons{
 		font-size: 16px;
 	}
+	/* Compact widget buttons at narrow widths (mobile/tablet customizer preview)
+	   !important needed to override WP core .wp-core-ui .button which has higher specificity */
+	@media (max-width: 768px) {
+		.widget-button-container{
+			gap: 3px;
+		}
+		.widget-button{
+			font-size: 11px !important;
+			padding: 0 6px !important;
+			min-height: 24px !important;
+			line-height: 24px !important;
+		}
+		.widget-button>span{
+			width: 14px;height: 14px;
+		}
+		.widget-button .dashicons{
+			font-size: 14px;
+			width: 14px;
+			height: 14px;
+		}
+	}
+	@media (max-width: 480px) {
+		.widget-button-container{
+			gap: 2px;
+		}
+		.widget-button{
+			font-size: 0 !important;
+			padding: 0 5px !important;
+			min-height: 22px !important;
+			line-height: 22px !important;
+		}
+		.widget-button>span{
+			width: 14px;height: 14px;margin: 0;
+		}
+		.widget-button .dashicons{
+			font-size: 13px;
+			width: 13px;
+			height: 13px;
+		}
+	}
 	.drag-widget-button{
-		cursor: grab;
+		cursor: grab !important;
+		opacity: 1 !important; /* Always visible so users can find the drag target */
 	}
 	.drag-widget-button:active{
-		cursor: grabbing;
+		cursor: grabbing !important;
 	}
 	.move-widget-button[disabled],
 	.move-widget-button[aria-disabled="true"]{
@@ -136,15 +235,35 @@ class Custom_Media_Widget extends WP_Widget {
 		cursor: not-allowed;
 		pointer-events: none;
 	}
-	.custom-widget-container.is-dragging .sass-media-widget{
-		outline: 2px dashed #2271b1;
-		background: rgba(34, 113, 177, 0.08);
+	/* Clone that follows the cursor: lifted look */
+	.sass-widget-dragging{
+		z-index: 9999 !important;
+		opacity: 0.92 !important;
+		transform: scale(1.02) !important;
+		box-shadow: 0 12px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.12) !important;
+		pointer-events: none;
 	}
+	.sass-widget-dragging .widget-button{
+		opacity: 1 !important;
+	}
+	/* Original widget left behind as ghost (sortable hides it — override) */
+	.sass-widget-ghost{
+		display: block !important;
+		visibility: visible !important;
+		opacity: 0.3 !important;
+		outline: 2px dashed #2271b1;
+		outline-offset: -2px;
+	}
+	.sass-widget-ghost .widget-button{
+		opacity: 0 !important;
+		pointer-events: none;
+	}
+	/* Drop zone placeholder — matches dragged widget size (set via JS) */
 	.sass-widget-placeholder{
 		border: 2px dashed #2271b1;
-		background: rgba(34, 113, 177, 0.08);
-		min-height: 80px;
-		margin: 10px 0;
+		background: rgba(34, 113, 177, 0.06);
+		border-radius: 4px;
+		box-sizing: border-box;
 	}
 	.widget-meta-info{
 		position: absolute;
@@ -174,6 +293,29 @@ class Custom_Media_Widget extends WP_Widget {
 		right: 0;
 		bottom: 0;
 	}
+	/* Compact meta labels & ensure thin banners have room for overlays at narrow widths */
+	@media (max-width: 768px) {
+		.widget-meta-info{
+			font-size: 10px;
+			line-height: 14px;
+			padding-right: 3px;
+			padding-left: 3px;
+		}
+		.sass-media-widget.image-selected{
+			min-height: 40px;
+		}
+	}
+	@media (max-width: 480px) {
+		.widget-meta-info{
+			font-size: 9px;
+			line-height: 13px;
+			padding-right: 2px;
+			padding-left: 2px;
+		}
+		.sass-media-widget.image-selected{
+			min-height: 36px;
+		}
+	}
 	
 	<?php 
 			if(is_customize_preview())
@@ -202,22 +344,27 @@ class Custom_Media_Widget extends WP_Widget {
 		
 		$esc_advertiser_uri = esc_url( $advertiser_uri );
 ?>
-<div class="custom-widget-container wp-core-ui" data-widget-id="<?php echo esc_attr( $this->id ); ?>" data-sidebar-id="<?php echo esc_attr( $args['id'] ?? '' ); ?>" data-widget-instance-id="<?php echo esc_attr( $args['widget_id'] ?? '' ); ?>">
+<?php
+		$device_desktop = isset( $instance['device_desktop'] ) ? $instance['device_desktop'] : '1';
+		$device_tablet  = isset( $instance['device_tablet'] )  ? $instance['device_tablet']  : '1';
+		$device_mobile  = isset( $instance['device_mobile'] )  ? $instance['device_mobile']  : '1';
+?>
+<div class="custom-widget-container wp-core-ui" data-widget-id="<?php echo esc_attr( $this->id ); ?>" data-sidebar-id="<?php echo esc_attr( $args['id'] ?? '' ); ?>" data-widget-instance-id="<?php echo esc_attr( $args['widget_id'] ?? '' ); ?>" data-sass-device-desktop="<?php echo esc_attr( $device_desktop ); ?>" data-sass-device-tablet="<?php echo esc_attr( $device_tablet ); ?>" data-sass-device-mobile="<?php echo esc_attr( $device_mobile ); ?>">
 	<a target="_blank" rel="noopener" class="sass-media-widget<?php echo !empty($widget_media_uri) ? ' image-selected' : ''?>" data-sass-media-widget-title="<?php echo esc_attr( $title ); ?>"
+	   <?php if ( is_customize_preview() ) { echo 'draggable="false"'; } ?>
 	   <?php
 		echo user_can( $current_user, 'administrator' ) ? (is_customize_preview() ? null : "href='$esc_link'") : "href='$esc_advertiser_uri'"
 	   ?>
 	   >
-		<?php if (str_ends_with($widget_media_uri, '.webm') || str_ends_with($widget_media_uri, '.mp4')) {
+		<?php
+		$is_video = $widget_media_uri && ( str_ends_with( $widget_media_uri, '.webm' ) || str_ends_with( $widget_media_uri, '.mp4' ) );
+		if ( $is_video ) :
+			$video_type = str_ends_with( $widget_media_uri, '.webm' ) ? 'video/webm' : 'video/mp4';
 		?>
-		<video loop autoplay muted style="grid-area: 1 / 1; width: 100%;">
-			<source src="<?php echo esc_attr( $widget_media_uri ); ?>" type="video/webm">
-			<source src="<?php echo esc_attr( $widget_media_uri ); ?>" type="video/mp4">
-			Your browser does not support the video tag.
+		<video loop autoplay muted playsinline style="grid-area: 1 / 1; width: 100%;">
+			<source src="<?php echo esc_url( $widget_media_uri ); ?>" type="<?php echo esc_attr( $video_type ); ?>">
 		</video>
-				<?php	
-		}	
-		?>
+		<?php endif; ?>
 		<?php if (user_can( $current_user, 'administrator' )) {
 		?>	
 		<div class="widget-button-container">
@@ -274,47 +421,227 @@ class Custom_Media_Widget extends WP_Widget {
      * @param array $instance Previously saved values from database.
      */
 	public function form( $instance ) {
-		$media_uri = ! empty( $instance['media_uri'] ) ? $instance['media_uri'] : __( '', 'default' );
-		$position_description = ! empty( $instance['position_description'] ) ? $instance['position_description'] : __( '', 'default' );
-		$title = ! empty( $instance['title'] ) ? $instance['title'] : __( '', 'default' );
-		$media_aspect_ratio = ! empty( $instance['media_aspect_ratio'] ) ? $instance['media_aspect_ratio'] : __( '', 'default' );
-		$advertiser_uri = ! empty( $instance['advertiser_uri'] ) ? $instance['advertiser_uri'] : __( '', 'default' );
-		
+		$media_uri = ! empty( $instance['media_uri'] ) ? $instance['media_uri'] : '';
+		$position_description = ! empty( $instance['position_description'] ) ? $instance['position_description'] : '';
+		$title = ! empty( $instance['title'] ) ? $instance['title'] : '';
+		$media_aspect_ratio = ! empty( $instance['media_aspect_ratio'] ) ? $instance['media_aspect_ratio'] : '';
+		$advertiser_uri = ! empty( $instance['advertiser_uri'] ) ? $instance['advertiser_uri'] : '';
+
+		// Device visibility — default to all checked (show everywhere)
+		$device_desktop = isset( $instance['device_desktop'] ) ? $instance['device_desktop'] : '1';
+		$device_tablet  = isset( $instance['device_tablet'] )  ? $instance['device_tablet']  : '1';
+		$device_mobile  = isset( $instance['device_mobile'] )  ? $instance['device_mobile']  : '1';
+
+		// Taxonomy rules
+		$tax_mode       = ! empty( $instance['tax_mode'] )       ? $instance['tax_mode']       : 'hide';
+		$tax_categories = ! empty( $instance['tax_categories'] ) ? $instance['tax_categories'] : array();
+		$tax_scope      = ! empty( $instance['tax_scope'] )      ? $instance['tax_scope']      : '1';
+
+		// Date scheduling
+		$show_from = ! empty( $instance['show_from'] ) ? $instance['show_from'] : '';
+		$show_to   = ! empty( $instance['show_to'] )   ? $instance['show_to']   : '';
+
 		$widget_identifier = $this->get_field_name('');
 		$widget_identifier = str_replace( '[]', '', $widget_identifier );
 		$widget_unique_id = wp_generate_uuid4();
 ?>
-<div class="custom-media-widget-form" data-widget-id="<?php echo esc_attr( $this->id ); ?>" data-widget-unique-id="<?php echo esc_attr( $widget_unique_id ); ?>">
-	<p>
+<?php
+	// Determine status for badge
+	$now = current_time( 'Y-m-d\TH:i' );
+	$is_expired  = $show_to && $now > $show_to;
+	$is_scheduled = $show_from && $now < $show_from;
+	$all_devices_off = $device_desktop !== '1' && $device_tablet !== '1' && $device_mobile !== '1';
+	$status_class = '';
+	$status_label = '';
+	if ( $is_expired ) { $status_class = 'sass-status-expired'; $status_label = 'Expired'; }
+	elseif ( $is_scheduled ) { $status_class = 'sass-status-scheduled'; $status_label = 'Scheduled'; }
+	elseif ( $all_devices_off ) { $status_class = 'sass-status-hidden'; $status_label = 'Hidden'; }
+
+	// Build selected categories lookup for badges
+	$selected_terms = array();
+	if ( ! empty( $tax_categories ) ) {
+		$terms_all = get_terms( array( 'taxonomy' => 'category', 'hide_empty' => false, 'orderby' => 'name' ) );
+		if ( ! is_wp_error( $terms_all ) ) {
+			foreach ( $terms_all as $t ) {
+				if ( in_array( (string) $t->term_id, (array) $tax_categories ) ) {
+					$anc = get_ancestors( $t->term_id, 'category' );
+					$path = array();
+					foreach ( array_reverse( $anc ) as $aid ) {
+						$a = get_term( $aid, 'category' );
+						if ( ! is_wp_error( $a ) ) $path[] = $a->name;
+					}
+					$path[] = $t->name;
+					$selected_terms[] = array( 'id' => $t->term_id, 'label' => implode( ' > ', $path ) );
+				}
+			}
+		}
+	}
+?>
+<div class="custom-media-widget-form <?php echo esc_attr( $status_class ); ?>" data-widget-id="<?php echo esc_attr( $this->id ); ?>" data-widget-unique-id="<?php echo esc_attr( $widget_unique_id ); ?>" data-status="<?php echo esc_attr( $status_label ); ?>">
+	<?php if ( ! empty( $media_uri ) ) : ?>
+	<div class="sass-widget-thumbnail <?php echo ( ! empty( $media_aspect_ratio ) && preg_match( '/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/', $media_aspect_ratio, $m ) && $m[1] / $m[2] > 3 ) ? 'landscape-wide' : ''; ?>">
+		<?php if ( str_ends_with( $media_uri, '.webm' ) || str_ends_with( $media_uri, '.mp4' ) ) : ?>
+		<video muted loop autoplay playsinline src="<?php echo esc_url( $media_uri ); ?>"></video>
+		<?php else : ?>
+		<img src="<?php echo esc_url( $media_uri ); ?>" alt="<?php echo esc_attr( $title ); ?>">
+		<?php endif; ?>
+	</div>
+	<?php endif; ?>
+
+	<div class="sass-form-row">
 		<button class="button select-media-button" type="button">
 			<span class="dashicons-admin-media dashicons-before"></span>
 			Select Media
 		</button>
-		<!-- 		<button type="button" class="button insert-media add_media"><span class="wp-media-buttons-icon"></span> Add media</button>		 -->
-	</p>
-	<p>
-		<label for="<?php echo esc_attr( $this->get_field_id( 'title' ) ); ?>"><?php esc_attr_e( 'Title:', 'default' ); ?></label> 
+	</div>
+
+	<div class="sass-form-row">
+		<label for="<?php echo esc_attr( $this->get_field_id( 'title' ) ); ?>">Title</label>
 		<input class="widefat" id="<?php echo esc_attr( $this->get_field_id( 'title' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'title' ) ); ?>" type="text" value="<?php echo esc_attr( $title ); ?>" placeholder="e.g. Sport Company Inc.">
-	</p>
-	<p>
-		<label for="<?php echo esc_attr( $this->get_field_id( 'position_description' ) ); ?>"><?php esc_attr_e( 'Position Description:', 'default' ); ?></label> 
+	</div>
+
+	<div class="sass-form-row">
+		<label for="<?php echo esc_attr( $this->get_field_id( 'position_description' ) ); ?>">Position</label>
 		<input class="widefat" id="<?php echo esc_attr( $this->get_field_id( 'position_description' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'position_description' ) ); ?>" type="text" value="<?php echo esc_attr( $position_description ); ?>" placeholder="e.g. RHS Default">
-	</p>
-	<p>
-		<label for="<?php echo esc_attr( $this->get_field_id( 'advertiser_uri' ) ); ?>"><?php esc_attr_e( 'Advertiser URI:', 'default' ); ?></label> 
-		<input class="widefat" id="<?php echo esc_attr( $this->get_field_id( 'advertiser_uri' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'advertiser_uri' ) ); ?>" type="text" value="<?php echo esc_attr( $advertiser_uri ); ?>" placeholder="e.g. https://sport.co?utm_source=sass&utm_medium=banner&utm_campaign=spring_collection&utm_id=spr_col_01">
-	</p>
-	<br/>	
-	<details>
-		<summary>Advanced Settings</summary>
-		<p>
-			<label for="<?php echo esc_attr( $this->get_field_id( 'media_uri' ) ); ?>"><?php esc_attr_e( 'Media URI:', 'default' ); ?></label> 
-			<input class="widefat media-uri-input" id="<?php echo esc_attr( $this->get_field_id( 'media_uri' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'media_uri' ) ); ?>" type="text" value="<?php echo esc_attr( $media_uri ); ?>" placeholder="e.g. https://example.com/image.gif">
-		</p>
-		<p>
-			<label for="<?php echo esc_attr( $this->get_field_id( 'media_aspect_ratio' ) ); ?>"><?php esc_attr_e( 'Aspect Ratio:', 'default' ); ?></label> 
-			<input class="widefat media_aspect_ratio" id="<?php echo esc_attr( $this->get_field_id( 'media_aspect_ratio' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'media_aspect_ratio' ) ); ?>" type="text" value="<?php echo esc_attr( $media_aspect_ratio ); ?>" >
-		</p>
+	</div>
+
+	<div class="sass-form-row">
+		<label for="<?php echo esc_attr( $this->get_field_id( 'advertiser_uri' ) ); ?>">Link URL</label>
+		<input class="widefat" id="<?php echo esc_attr( $this->get_field_id( 'advertiser_uri' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'advertiser_uri' ) ); ?>" type="text" value="<?php echo esc_attr( $advertiser_uri ); ?>" placeholder="https://...">
+	</div>
+
+	<details class="sass-section-details" open>
+		<summary>Visibility &amp; Scheduling</summary>
+		<div class="sass-section-body">
+			<div class="sass-form-row">
+				<label class="sass-label-inline">Devices</label>
+				<div class="sass-device-toggles">
+					<label class="sass-device-toggle">
+						<input type="hidden" name="<?php echo esc_attr( $this->get_field_name( 'device_desktop' ) ); ?>" value="0">
+						<input type="checkbox" name="<?php echo esc_attr( $this->get_field_name( 'device_desktop' ) ); ?>" value="1" <?php checked( $device_desktop, '1' ); ?>>
+						<span class="dashicons dashicons-desktop"></span> Desktop
+					</label>
+					<label class="sass-device-toggle">
+						<input type="hidden" name="<?php echo esc_attr( $this->get_field_name( 'device_tablet' ) ); ?>" value="0">
+						<input type="checkbox" name="<?php echo esc_attr( $this->get_field_name( 'device_tablet' ) ); ?>" value="1" <?php checked( $device_tablet, '1' ); ?>>
+						<span class="dashicons dashicons-tablet"></span> Tablet
+					</label>
+					<label class="sass-device-toggle">
+						<input type="hidden" name="<?php echo esc_attr( $this->get_field_name( 'device_mobile' ) ); ?>" value="0">
+						<input type="checkbox" name="<?php echo esc_attr( $this->get_field_name( 'device_mobile' ) ); ?>" value="1" <?php checked( $device_mobile, '1' ); ?>>
+						<span class="dashicons dashicons-smartphone"></span> Mobile
+					</label>
+				</div>
+			</div>
+			<div class="sass-date-row">
+				<div class="sass-date-field">
+					<label for="<?php echo esc_attr( $this->get_field_id( 'show_from' ) ); ?>">From</label>
+					<input type="date" id="<?php echo esc_attr( $this->get_field_id( 'show_from' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'show_from' ) ); ?>" value="<?php echo esc_attr( $show_from ); ?>">
+				</div>
+				<span class="sass-date-separator">&rarr;</span>
+				<div class="sass-date-field">
+					<label for="<?php echo esc_attr( $this->get_field_id( 'show_to' ) ); ?>">Until</label>
+					<input type="date" id="<?php echo esc_attr( $this->get_field_id( 'show_to' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'show_to' ) ); ?>" value="<?php echo esc_attr( $show_to ); ?>">
+				</div>
+			</div>
+		</div>
+	</details>
+
+	<details class="sass-section-details">
+		<summary>
+			Category Visibility
+			<?php if ( ! empty( $selected_terms ) ) : ?>
+			<span class="sass-summary-count"><?php echo count( $selected_terms ); ?></span>
+			<?php endif; ?>
+		</summary>
+		<div class="sass-section-body">
+			<select class="widefat sass-tax-mode" id="<?php echo esc_attr( $this->get_field_id( 'tax_mode' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'tax_mode' ) ); ?>">
+				<option value="hide" <?php selected( $tax_mode, 'hide' ); ?>>Hide on selected</option>
+				<option value="show" <?php selected( $tax_mode, 'show' ); ?>>Show only on selected</option>
+			</select>
+			<?php if ( ! empty( $selected_terms ) ) : ?>
+			<div class="sass-tax-selected-badges">
+				<?php foreach ( $selected_terms as $st ) : ?>
+				<span class="sass-tax-badge" data-term-id="<?php echo esc_attr( $st['id'] ); ?>"><?php echo esc_html( $st['label'] ); ?> <button type="button" class="sass-tax-badge-remove" aria-label="Remove">&times;</button></span>
+				<?php endforeach; ?>
+			</div>
+			<?php endif; ?>
+			<input type="text" class="widefat sass-tax-search" placeholder="Search categories...">
+			<div class="sass-tax-list">
+				<?php
+				$terms = get_terms( array( 'taxonomy' => 'category', 'hide_empty' => false, 'orderby' => 'name' ) );
+				if ( ! is_wp_error( $terms ) ) {
+					// Sort: checked first, then alphabetical
+					$checked_terms = array();
+					$unchecked_terms = array();
+					foreach ( $terms as $term ) {
+						if ( in_array( (string) $term->term_id, (array) $tax_categories ) ) {
+							$checked_terms[] = $term;
+						} else {
+							$unchecked_terms[] = $term;
+						}
+					}
+					$sorted_terms = array_merge( $checked_terms, $unchecked_terms );
+					foreach ( $sorted_terms as $term ) {
+						$ancestors = get_ancestors( $term->term_id, 'category' );
+						$chain = array();
+						foreach ( array_reverse( $ancestors ) as $aid ) {
+							$ancestor = get_term( $aid, 'category' );
+							if ( ! is_wp_error( $ancestor ) ) {
+								$chain[] = $ancestor->name;
+							}
+						}
+						$breadcrumb = ! empty( $chain ) ? implode( ' &rsaquo; ', $chain ) . ' &rsaquo; ' : '';
+						$full_path = strtolower( ( ! empty( $chain ) ? implode( ' › ', $chain ) . ' › ' : '' ) . $term->name );
+						$is_checked = in_array( (string) $term->term_id, (array) $tax_categories );
+				?>
+				<label class="sass-tax-item" data-search="<?php echo esc_attr( $full_path ); ?>" data-term-id="<?php echo esc_attr( $term->term_id ); ?>">
+					<input type="checkbox" name="<?php echo esc_attr( $this->get_field_name( 'tax_categories' ) ); ?>[]" value="<?php echo esc_attr( $term->term_id ); ?>" <?php checked( $is_checked ); ?>>
+					<?php if ( $breadcrumb ) : ?><span class="sass-tax-ancestors"><?php echo $breadcrumb; ?></span><?php endif; ?><?php echo esc_html( $term->name ); ?>
+				</label>
+				<?php
+					}
+				}
+				?>
+			</div>
+			<select class="widefat sass-tax-scope" id="<?php echo esc_attr( $this->get_field_id( 'tax_scope' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'tax_scope' ) ); ?>">
+				<option value="1" <?php selected( $tax_scope, '1' ); ?>>Archive &amp; Single posts</option>
+				<option value="2" <?php selected( $tax_scope, '2' ); ?>>Archive only</option>
+				<option value="3" <?php selected( $tax_scope, '3' ); ?>>Single posts only</option>
+			</select>
+		</div>
+	</details>
+
+	<details class="sass-section-details">
+		<summary>Media &amp; Display</summary>
+		<div class="sass-section-body">
+			<div class="sass-form-row">
+				<label for="<?php echo esc_attr( $this->get_field_id( 'media_uri' ) ); ?>">Media URI</label>
+				<input class="widefat media-uri-input" id="<?php echo esc_attr( $this->get_field_id( 'media_uri' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'media_uri' ) ); ?>" type="text" value="<?php echo esc_attr( $media_uri ); ?>" placeholder="https://...">
+			</div>
+			<div class="sass-form-row">
+				<label for="<?php echo esc_attr( $this->get_field_id( 'media_aspect_ratio' ) ); ?>">Aspect Ratio</label>
+				<input class="widefat media_aspect_ratio" id="<?php echo esc_attr( $this->get_field_id( 'media_aspect_ratio' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'media_aspect_ratio' ) ); ?>" type="text" value="<?php echo esc_attr( $media_aspect_ratio ); ?>">
+			</div>
+		</div>
+	</details>
+
+	<details class="sass-section-details">
+		<summary>Move to Sidebar</summary>
+		<div class="sass-section-body">
+			<select class="widefat sass-move-target">
+				<option value="">— Select sidebar —</option>
+				<?php
+				global $wp_registered_sidebars;
+				if ( ! empty( $wp_registered_sidebars ) ) {
+					foreach ( $wp_registered_sidebars as $sb_id => $sb ) {
+						echo '<option value="' . esc_attr( $sb_id ) . '">' . esc_html( $sb['name'] ) . '</option>';
+					}
+				}
+				?>
+			</select>
+			<button type="button" class="button sass-move-btn">Move &rarr;</button>
+		</div>
 	</details>
 </div>
 
@@ -323,15 +650,7 @@ class Custom_Media_Widget extends WP_Widget {
 		display: inline-block;width: 20px;height: 20px;line-height: 1;vertical-align: middle;margin: 0 2px;
 	}
 </style>
-<script>
-	{
-		let form = document.querySelector('.custom-media-widget-form[data-widget-unique-id="<?php echo esc_attr( $widget_unique_id ); ?>"]');
-		let mediaSelectButton = form.querySelector("button.select-media-button");
-		mediaSelectButton.addEventListener('click', function(e) {
-			openMediaWindow(form);
-		});
-	}
-</script>
+<!-- Media button click handled by delegated listener in customizer.js -->
 <?php 
 	}
 
@@ -351,10 +670,25 @@ class Custom_Media_Widget extends WP_Widget {
 
 		$instance['title'] = sanitize_text_field( $new_instance['title'] );
 		$instance['position_description'] = ( ! empty( $new_instance['position_description'] ) ) ? sanitize_text_field( $new_instance['position_description'] ) : $old_instance['position_description'];
-		
+
 		$instance['advertiser_uri'] = ( ! empty( $new_instance['advertiser_uri'] ) ) ? sanitize_text_field( $new_instance['advertiser_uri'] ) : $old_instance['advertiser_uri'];
-		
+
 		$instance['media_aspect_ratio'] = ( ! empty( $new_instance['media_aspect_ratio'] ) ) ? sanitize_text_field( $new_instance['media_aspect_ratio'] ) : null;
+
+		// Device visibility
+		$instance['device_desktop'] = ! empty( $new_instance['device_desktop'] ) ? '1' : '0';
+		$instance['device_tablet']  = ! empty( $new_instance['device_tablet'] )  ? '1' : '0';
+		$instance['device_mobile']  = ! empty( $new_instance['device_mobile'] )  ? '1' : '0';
+
+		// Taxonomy rules
+		$instance['tax_mode'] = in_array( $new_instance['tax_mode'], array( 'hide', 'show' ) ) ? $new_instance['tax_mode'] : 'hide';
+		$instance['tax_categories'] = ! empty( $new_instance['tax_categories'] ) ? array_map( 'absint', (array) $new_instance['tax_categories'] ) : array();
+		$instance['tax_scope'] = in_array( $new_instance['tax_scope'], array( '1', '2', '3' ) ) ? $new_instance['tax_scope'] : '1';
+
+		// Date scheduling
+		$instance['show_from'] = ! empty( $new_instance['show_from'] ) ? sanitize_text_field( $new_instance['show_from'] ) : '';
+		$instance['show_to']   = ! empty( $new_instance['show_to'] )   ? sanitize_text_field( $new_instance['show_to'] )   : '';
+
 		return $instance;
 	}
 
@@ -371,14 +705,15 @@ function enqueue_custom_media_widget_scripts() {
 		// 		wp_enqueue_media();
 		wp_enqueue_style( 'media-views' );
 		wp_enqueue_script( 'jquery-ui-sortable' );
-		wp_enqueue_script( 'custom-media-widget', plugin_dir_url( __FILE__ ) . 'custom-media-picker.js', array( 'jquery', 'customize-preview', 'customize-widgets', 'jquery-ui-sortable' ), '1.0.1', true );
+		wp_enqueue_script( 'custom-media-widget', plugin_dir_url( __FILE__ ) . 'custom-media-picker.js', array( 'jquery', 'customize-preview', 'customize-widgets', 'jquery-ui-sortable' ), '1.2.0', true );
 	}
 }
 add_action( 'wp_enqueue_scripts', 'enqueue_custom_media_widget_scripts' );
 
 function enqueue_customizer_controls_scripts() {
 	wp_enqueue_media();
-	wp_enqueue_script( 'my-customizer-controls', plugin_dir_url( __FILE__ ) . 'customizer.js', array( 'jquery', 'customize-controls' ), "1.0.4", true );
+	wp_enqueue_script( 'my-customizer-controls', plugin_dir_url( __FILE__ ) . 'customizer.js', array( 'jquery', 'customize-controls' ), "1.3.0", true );
+	wp_enqueue_style( 'sass-widget-form', plugin_dir_url( __FILE__ ) . 'widget-form.css', array(), '1.3.0' );
 }
 add_action( 'customize_controls_enqueue_scripts', 'enqueue_customizer_controls_scripts' );
 
@@ -388,7 +723,7 @@ function sass_enqueue_customizer_preview_scripts() {
 		'sass-customizer-device-preview',
 		plugin_dir_url( __FILE__ ) . 'customizer-device-preview.js',
 		array( 'customize-preview' ),
-		'1.0.0',
+		'1.0.2',
 		true
 	);
 }
@@ -398,22 +733,14 @@ add_action( 'customize_preview_init', 'sass_enqueue_customizer_preview_scripts' 
 function sass_enqueue_customizer_controls_device_relay() {
 	$inline_js = "
 		(function(api) {
-			console.log('[SASS Device Relay] Controls-side relay script loaded');
 			api.bind('ready', function() {
-				console.log('[SASS Device Relay] Customizer ready');
 				if (api.previewedDevice) {
-					console.log('[SASS Device Relay] previewedDevice exists, initial value:', api.previewedDevice.get());
 					api.previewedDevice.bind(function(newDevice) {
-						console.log('[SASS Device Relay] Device changed to:', newDevice, '— sending to preview');
 						api.previewer.send('previewedDevice', newDevice);
 					});
-					// Send initial device on first preview load
 					api.previewer.bind('ready', function() {
-						console.log('[SASS Device Relay] Previewer ready — sending initial device:', api.previewedDevice.get());
 						api.previewer.send('previewedDevice', api.previewedDevice.get());
 					});
-				} else {
-					console.warn('[SASS Device Relay] api.previewedDevice does NOT exist');
 				}
 			});
 		})(wp.customize);
@@ -463,13 +790,12 @@ function sass_bypass_widgetopts_device_checks_in_customizer() {
 }
 add_action( 'wp_loaded', 'sass_bypass_widgetopts_device_checks_in_customizer', 99 );
 
-// testing
-function widgetopts_in_widget_forms( $widget, $return, $instance ){
-?>
-<br/>
-<?php
-}
-add_action( 'in_widget_form', 'widgetopts_in_widget_forms', 10, 3 );
+// Allow in_category() in Widget Options' PHP logic rules.
+// Widget Options restricts which PHP functions can be used in its "Logic" field
+// but doesn't include in_category() by default.
+add_filter( 'widgetopts_allowed_php_functions', function( $functions ) {
+	return array_merge( $functions, array( 'in_category' ) );
+});
 
 
 // Featured image archive view clickable
