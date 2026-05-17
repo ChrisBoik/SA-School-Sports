@@ -937,3 +937,69 @@ function lsv_customize_register($wp_customize) {
 }
 add_action('customize_register', 'lsv_customize_register');
 
+/* ---------------------------------------------------------------------------
+ * Category Loop – Top widget area
+ *
+ * Registers a sidebar and renders it above the first post on category archive
+ * pages. Output lands inside .td-ss-main-content, before the first td_module_X
+ * card produced by td-standard-pack/Newspaper/loop.php.
+ *
+ * Uses loop_start (fires once inside the first WP_Query::the_post(), before
+ * td-standard-pack opens its column wrappers).
+ * ------------------------------------------------------------------------- */
+
+add_action( 'widgets_init', function () {
+	register_sidebar( array(
+		'name'          => 'Category Loop – Top',
+		'id'            => 'sass-category-loop-top',
+		'description'   => 'Banners rendered above the first post card on category archive pages.',
+		'before_widget' => '<div id="%1$s" class="widget %2$s sass-category-loop-top-widget">',
+		'after_widget'  => '</div>',
+		'before_title'  => '<h4 class="widget-title">',
+		'after_title'   => '</h4>',
+	) );
+} );
+
+add_action( 'loop_start', function ( $query ) {
+
+	static $rendered = false;
+	if ( $rendered ) {
+		return;
+	}
+
+	if ( is_admin() ) {
+		return;
+	}
+	if ( ! ( $query instanceof WP_Query ) || ! $query->is_main_query() ) {
+		return;
+	}
+	if ( ! is_category() ) {
+		return;
+	}
+
+	/**
+	 * Per-category opt-out filter.
+	 *
+	 * @param bool $show   Whether to render the widget area.
+	 * @param int  $cat_id Current category term_id.
+	 */
+	$show = apply_filters(
+		'sass_show_category_loop_top_widget',
+		true,
+		get_queried_object_id()
+	);
+	if ( ! $show ) {
+		return;
+	}
+
+	if ( ! is_active_sidebar( 'sass-category-loop-top' ) ) {
+		return;
+	}
+
+	$rendered = true;
+
+	echo '<div class="sass-category-loop-top">';
+	dynamic_sidebar( 'sass-category-loop-top' );
+	echo '</div>';
+} );
+
