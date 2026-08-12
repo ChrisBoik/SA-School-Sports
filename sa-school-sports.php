@@ -337,7 +337,7 @@ class Custom_Media_Widget extends WP_Widget {
 		// 			$query['autofocus[panel]'] = 'widgets';
 		$query['autofocus[section]'] = "sidebar-widgets-td-$sidebar_name";
 		// 			$query['autofocus[control]'] = 'widget-custom_media_widget-40-title';
-		$current_url = ( is_ssl() ? 'https://' : 'http://' ) . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+		$current_url = ( is_ssl() ? 'https://' : 'http://' ) . ( $_SERVER['HTTP_HOST'] ?? '' ) . ( $_SERVER['REQUEST_URI'] ?? '' );
 		$query['url'] = urlencode( $current_url );
 		$link = add_query_arg( $query, wp_customize_url() );
 		$esc_link = esc_url( $link );

@@ -8,6 +8,14 @@ Custom WordPress plugin for saschoolsports.co.za. Handles:
 For prod ops, local stack, SSH, and client context see:
 `~/Library/CloudStorage/OneDrive-Personal/Documents/Yard8/SASS/wordpress-local/CLAUDE.md`
 
+**Server access update (2026-07-26):** `ssh saschoolsports` (direct) still works
+unchanged. New alternate path added: `ssh ssh-saschoolsports` — routes through a
+Cloudflare Tunnel (`cloudflared access ssh`) under the `cdn@yard8.co.za` account's
+Zero Trust org (team `yard8`), gated to `chris@yard8.co.za`. fail2ban also installed
+and active on this box since 2026-07-06 (sshd + recidive jails, ~100+ bans/day, zero
+false positives). No open FTP or other stray ports found on this server — only
+22/80/443 are open.
+
 ## Plugin Files
 
 | File | Runs in | Purpose |
